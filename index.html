@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Internship Project 2 - To‑Do List</title>
+  <style>
+    :root{
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --accent: #4f46e5;
+      --muted: #6b7280;
+      --success: #16a34a;
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing: border-box}
+    body{
+      margin:0; padding:24px; background:linear-gradient(180deg,var(--bg),#eef2ff);
+      color:#0f172a; -webkit-font-smoothing:antialiased;
+    }
+    .container{max-width:900px; margin:0 auto}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    header h1{font-size:1.5rem;margin:0}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+
+    /* form */
+    form.row{display:flex;gap:8px;margin-bottom:12px}
+    input[type=text], select{flex:1;padding:10px;border-radius:8px;border:1px solid #e6e9ef}
+    button.primary{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid #e6e9ef;padding:8px 10px;border-radius:8px;cursor:pointer}
+
+    /* list */
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+    .search{flex:1;display:flex}
+    .search input{flex:1;padding:8px;border-radius:8px;border:1px solid #e6e9ef}
+
+    ul.tasks{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+    li.task{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;border:1px solid #f1f5f9}
+    li.task .meta{flex:1}
+    li.task.completed{opacity:0.7;text-decoration:line-through;border-style:dashed}
+    .tag{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#eef2ff;color:var(--accent)}
+
+    .actions{display:flex;gap:8px}
+    .small{font-size:0.85rem;padding:6px 8px}
+    .muted{color:var(--muted)}
+
+    footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted)}
+
+    @media (max-width:600px){
+      form.row{flex-direction:column}
+      .controls{flex-direction:column}
+      header{gap:8px}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="icon" aria-hidden>📝</div>
+      <h1>To‑Do List</h1>
+    </header>
+
+    <section class="card" aria-labelledby="addTaskHeading">
+      <h2 id="addTaskHeading" style="margin-top:0;font-size:1.05rem">Add a new task</h2>
+      <form id="taskForm" class="row" autocomplete="off">
+        <input id="taskInput" type="text" placeholder="Type task title..." required aria-label="Task title">
+        <select id="categorySelect" aria-label="Category">
+          <option value="General">General</option>
+          <option value="Study">Study</option>
+          <option value="Work">Work</option>
+          <option value="Personal">Personal</option>
+        </select>
+        <button class="primary" type="submit">Add</button>
+      </form>
+
+      <div class="controls">
+        <div class="search">
+          <input id="searchInput" placeholder="Search tasks..." aria-label="Search tasks">
+        </div>
+        <div>
+          <label for="filterSelect" class="muted">Filter:</label>
+          <select id="filterSelect" class="small">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div>
+          <label for="sortSelect" class="muted">Sort:</label>
+          <select id="sortSelect" class="small">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="az">A → Z</option>
+            <option value="za">Z → A</option>
+          </select>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button id="clearCompletedBtn" class="secondary small">Clear completed</button>
+          <button id="clearAllBtn" class="secondary small">Clear all</button>
+        </div>
+      </div>
+
+      <ul id="tasksList" class="tasks" aria-live="polite"></ul>
+
+      <footer>
+        <div id="counts">0 tasks</div>
+        <div class="muted">Saved locally in browser (localStorage)</div>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    // Simple, accessible To-Do list using localStorage
+    const taskForm = document.getElementById('taskForm');
+    const taskInput = document.getElementById('taskInput');
+    const categorySelect = document.getElementById('categorySelect');
+    const tasksList = document.getElementById('tasksList');
+    const counts = document.getElementById('counts');
+    const searchInput = document.getElementById('searchInput');
+    const filterSelect = document.getElementById('filterSelect');
+    const sortSelect = document.getElementById('sortSelect');
+    const clearCompletedBtn = document.getElementById('clearCompletedBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+
+    const STORAGE_KEY = 'internship2_todos_v1';
+
+    let tasks = loadTasks();
+
+    // ---------- helpers ----------
+    function saveTasks(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    }
+    function loadTasks(){
+      try{
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      }catch(e){
+        return [];
+      }
+    }
+    function uid(){return Date.now().toString(36) + Math.random().toString(36).slice(2,7)}
+
+    // ---------- rendering ----------
+    function render(){
+      // filter, search, sort
+      const q = searchInput.value.trim().toLowerCase();
+      const filter = filterSelect.value;
+      const sort = sortSelect.value;
+
+      let visible = tasks.slice(); // copy
+
+      if(filter === 'active') visible = visible.filter(t => !t.completed);
+      if(filter === 'completed') visible = visible.filter(t => t.completed);
+
+      if(q) visible = visible.filter(t => t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q));
+
+      if(sort === 'newest') visible.sort((a,b)=> b.created - a.created);
+      if(sort === 'oldest') visible.sort((a,b)=> a.created - b.created);
+      if(sort === 'az') visible.sort((a,b)=> a.title.localeCompare(b.title));
+      if(sort === 'za') visible.sort((a,b)=> b.title.localeCompare(a.title));
+
+      tasksList.innerHTML = '';
+      if(visible.length === 0){
+        const li = document.createElement('li');
+        li.className = 'muted';
+        li.textContent = 'No tasks found.';
+        tasksList.appendChild(li);
+      }
+
+      visible.forEach(task => {
+        const li = document.createElement('li');
+        li.className = 'task' + (task.completed ? ' completed' : '');
+
+        // checkbox
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!task.completed;
+        cb.setAttribute('aria-label','Mark task as completed');
+        cb.addEventListener('change',()=>{
+          task.completed = cb.checked;
+          task.updated = Date.now();
+          saveTasks(); render();
+        });
+
+        // title + meta
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const title = document.createElement('div');
+        title.textContent = task.title;
+        const sub = document.createElement('div');
+        sub.className = 'muted';
+        sub.style.fontSize = '0.85rem';
+        sub.innerHTML = `<span class="tag" aria-hidden>${escapeHtml(task.category)}</span> &nbsp; • &nbsp; ${new Date(task.created).toLocaleString()}`;
+        meta.appendChild(title);
+        meta.appendChild(sub);
+
+        // actions
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'small';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click',()=> openEdit(task.id));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'small';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click',()=> deleteTask(task.id));
+
+        actions.appendChild(editBtn);
+        actions.appendChild(delBtn);
+
+        li.appendChild(cb);
+        li.appendChild(meta);
+        li.appendChild(actions);
+
+        tasksList.appendChild(li);
+      });
+
+      // counts
+      const total = tasks.length;
+      const completed = tasks.filter(t=>t.completed).length;
+      counts.textContent = `${total} task(s) — ${completed} completed`;
+    }
+
+    // ---------- CRUD ----------
+    taskForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const title = taskInput.value.trim();
+      const category = categorySelect.value || 'General';
+      if(!title) return;
+      const newTask = {id:uid(), title, category, completed:false, created:Date.now(), updated:Date.now()};
+      tasks.push(newTask);
+      saveTasks();
+      taskInput.value = '';
+      categorySelect.value = 'General';
+      render();
+      taskInput.focus();
+    });
+
+    function deleteTask(id){
+      if(!confirm('Delete this task?')) return;
+      tasks = tasks.filter(t=>t.id !== id);
+      saveTasks(); render();
+    }
+
+    function openEdit(id){
+      const task = tasks.find(t=>t.id===id);
+      if(!task) return;
+
+      // simple inline prompt for edit (keeps code short and dependency-free)
+      const newTitle = prompt('Edit task title:', task.title);
+      if(newTitle === null) return; // cancelled
+      task.title = newTitle.trim() || task.title;
+      const newCategory = prompt('Edit category (Study, Work, Personal, General):', task.category);
+      if(newCategory !== null) task.category = newCategory.trim() || task.category;
+      task.updated = Date.now();
+      saveTasks(); render();
+    }
+
+    clearCompletedBtn.addEventListener('click',()=>{
+      if(!confirm('Remove all completed tasks?')) return;
+      tasks = tasks.filter(t=>!t.completed);
+      saveTasks(); render();
+    });
+    clearAllBtn.addEventListener('click',()=>{
+      if(!confirm('Remove ALL tasks? This cannot be undone.')) return;
+      tasks = [];
+      saveTasks(); render();
+    });
+
+    // search / filter events
+    [searchInput, filterSelect, sortSelect].forEach(el=>el.addEventListener('input', render));
+
+    // keyboard accessibility: pressing Enter in search clears (if empty) or focuses add input
+    searchInput.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape') searchInput.value='';
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        if(!searchInput.value.trim()) taskInput.focus();
+      }
+      setTimeout(render,0);
+    });
+
+    // small XSS helper for category tag
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, (s)=>({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
+    }
+
+    // initial render
+    render();
+
+    // helpful: expose tasks for debugging (optional)
+    window._internship_todos = tasks;
+  </script>
+</body>
+</html>
